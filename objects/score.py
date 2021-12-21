@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from helpers.discord import log_first_place
+from helpers.discord import Embed
 from helpers.pep import announce
 from helpers.user import safe_name
 from typing import Optional
@@ -10,6 +10,7 @@ from consts.c_modes import CustomModes
 from consts.complete import Completed
 from consts.privileges import Privileges
 from objects.beatmap import Beatmap
+from objects.stats import Stats
 from globs.conn import sql
 from globs import caches
 from libs.crypt import validate_md5
@@ -18,6 +19,7 @@ from lenhttp import Request
 from py3rijndael import RijndaelCbc, ZeroPadding
 from config import conf
 from .leaderboard import GlobalLeaderboard
+from helpers.discord import log_first_place
 import base64
 import traceback
 
@@ -304,7 +306,7 @@ class Score:
         self.accuracy = acc * 100
         return self.accuracy
     
-    async def on_first_place(self) -> None:
+    async def on_first_place(self, old_stats: 'Stats', new_stats: 'Stats') -> None:
         """Adds the score to the first_places table."""
 
         # Why did I design this system when i was stupid...
@@ -336,7 +338,7 @@ class Score:
         f" +{self.mods.readable} ({round(self.pp, 2)}pp)")
         # Announce it.
         await announce(msg)
-        await log_first_place(self)
+        await log_first_place(self, old_stats, new_stats)
     
     def insert_into_lb_cache(self) -> None:
         """Inserts the score into cached leaderboards if the leaderboards are
@@ -351,9 +353,11 @@ class Score:
         lb = GlobalLeaderboard.from_cache(self.bmap.md5, self.c_mode, self.mode)
         if lb is not None: lb.insert_user_score(self)
 
-    async def submit(self, clear_lbs: bool = True, calc_completed: bool = True,
+    async def submit(self, old_stats: 'Stats', new_stats: 'Stats',
+                     clear_lbs: bool = True, calc_completed: bool = True,
                      calc_place: bool = True, calc_pp: bool = True,
                      restricted: bool = False) -> None:
+
         """Inserts the score into the database, performing other necessary
         calculations.
         
@@ -380,7 +384,8 @@ class Score:
 
         # Handle first place.
         if self.placement == 1 and not restricted:
-            await self.on_first_place()
+            await self.on_first_place(old_stats, new_stats)
+
         
         # Insert to cache after score ID is assigned.
         if clear_lbs and self.completed is Completed.BEST \
