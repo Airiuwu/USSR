@@ -3,7 +3,11 @@ from constants.modes import Mode
 from constants.c_modes import CustomModes
 from typing import Optional
 from globals.connections import sql
-from helpers.user import get_rank_redis
+from helpers.user import (
+    get_rank_redis,
+    update_country_lb_pos,
+    update_lb_pos,
+)
 from helpers.pep import stats_refresh
 from logger import debug
 from globals.caches import stats_cache
@@ -103,7 +107,7 @@ class Stats:
             (self.c_mode, self.mode, self.user_id), self
         )
     
-    async def recalc_pp_acc_full(self, _run_pp: int = None) -> tuple[float, float]:
+    async def calc_pp_acc_full(self, _run_pp: int = None) -> tuple[float, float]:
         """Recalculates the full PP amount and average accuract for a user
         from scratch, using their top 100 scores. Sets the values in object
         and returns a tuple of pp and acc.
@@ -173,6 +177,22 @@ class Stats:
         self.max_combo = max_combo_db or 0
 
         return self.max_combo
+
+    async def calc_playcount(self) -> int:
+        """Calculates the user's playcount for the given mode + c_mode combo.
+
+        Note:
+            Does not update the value stored in the database. For that, use
+            `Stats.save()`.
+        """
+
+        self.playcount = await sql.fetchcol(
+            f"SELECT COUNT(*) FROM {self.c_mode.db_table} WHERE play_mode = %s "
+            "AND userid = %s",
+            (self.mode.value, self.user_id)
+        )
+
+        return self.playcount
     
     async def update_rank(self) -> int:
         """Updates the user's rank using data from redis. Returns the rank
@@ -192,8 +212,8 @@ class Stats:
         count = await sql.fetchcol(
             "SELECT COUNT(*) FROM {t} s RIGHT JOIN beatmaps b ON s.beatmap_md5 = "
             "b.beatmap_md5 WHERE b.ranked IN (2, 3) AND " # Max limit is 25397 to get max bonus pp.
-            "s.completed = 3 AND s.userid = %s LIMIT 25397".format(t= self.c_mode.db_table),
-            (self.user_id,)
+            "s.completed = 3 AND s.play_mode = %s AND s.userid = %s LIMIT 25397".format(t= self.c_mode.db_table),
+            (self.mode.value, self.user_id,)
         )
 
         self._cur_bonus_pp = 416.6667 * (1 - (0.9994 ** count))
@@ -217,6 +237,27 @@ class Stats:
         )
 
         if refresh_cache: await stats_refresh(self.user_id)
+    
+    async def update_redis_ranks(self, country: Optional[str] = None) -> None:
+        """Updates ordering of players in redis according to the stats object's
+        PP values.
+        
+        Args:
+            country (Optional[int]): The two letter country code for the user.
+                If not provided, the user's country code will be fetched directly
+                from the MySQL database (perf loss).
+        
+        Note:
+            It is recommended to run `Stats.update_rank()` following this to
+            get the user's newest rank as it is likely to have changed due to
+            the execution of this method.
+        """
+
+        args = (self.user_id, int(self.pp), self.mode, self.c_mode)
+
+        #await update_country_lb_pos()
+        await update_lb_pos(*args)
+        await update_country_lb_pos(*args, country)
 
 _fetch_ord = (
     Stats.from_cache,

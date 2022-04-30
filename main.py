@@ -71,6 +71,12 @@ from handlers.redis.rosu import (
 from handlers.redis.ussr import (
     drop_bmap_cache_pubsub,
     refresh_leaderboard_pubsub,
+    recalc_pp_pubsub,
+    recalc_user_pubsub,
+)
+from helpers.folders import (
+    verify_required_folders,
+    ensure_required_folders,
 )
 
 # Must return True for success or else server wont start.
@@ -84,6 +90,7 @@ STARTUP_TASKS = (
 DEPENDENCIES = (
     (verify_oppai, build_oppai),
     (check_log_file, ensure_log_file),
+    (verify_required_folders, ensure_required_folders)
 )
 
 PUBSUB_REGISTER = (
@@ -97,6 +104,8 @@ PUBSUB_REGISTER = (
     # USSR
     (drop_bmap_cache_pubsub, "ussr:bmap_decache"),
     (refresh_leaderboard_pubsub, "ussr:lb_refresh"),
+    (recalc_pp_pubsub, "ussr:recalc_pp"),
+    (recalc_user_pubsub, "ussr:recalc_user"),
 )
 
 def ensure_dependencies():
@@ -154,7 +163,7 @@ def server_start():
             Route("/web/osu-osz2-getscores.php", leaderboard_get_handler),
             Route("/web/osu-search.php", direct_get_handler),
             Route("/web/osu-search-set.php", get_set_handler),
-            Route("/d/{map_id:int}", download_map),
+            Route("/d/{map_id:str}", download_map),
             Route("/web/osu-getreplay.php", get_replay_web_handler),
             Route("/web/osu-screenshot.php", upload_image_handler, methods= ["POST"]),
             Route(
@@ -176,7 +185,7 @@ def server_start():
     )
 
     write_log_file("Server started!")
-    uvicorn.run(app, host= "0.0.0.0", port= config.PORT)
+    uvicorn.run(app, port= config.PORT, access_log= False, log_level= "error")
 
 
 if __name__ == "__main__":

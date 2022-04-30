@@ -39,7 +39,7 @@ def _beatmap_header(bmap: Beatmap, score_count: int = 0) -> str:
         return _status_header(bmap.status)
 
     return (
-        f"{bmap.status.value}|false|{bmap.id}|{bmap.set_id}|{score_count}\n"
+        f"{bmap.status.value}|false|{bmap.id}|{bmap.set_id}|{score_count}|0||\n"
         f"0\n{bmap.song_name}\n{bmap.rating}"
     )
 
@@ -113,10 +113,7 @@ async def leaderboard_get_handler(req: Request) -> Response:
 
     if s_ver != 4:
         # Restrict them for outdated client.
-        await edit_user(
-            Actions.RESTRICT, user_id, "Bypassing client version protections."
-        )
-        return PlainTextResponse(BASIC_ERR)
+        await edit_user(Actions.RESTRICT, user_id, "Bypassing client version protections.")
 
     # Check if we can avoid any lookups.
     if md5 in caches.no_check_md5s:

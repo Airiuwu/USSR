@@ -86,6 +86,29 @@ class Score:
         """Bool corresponding to whether the score has been submitted."""
 
         return self.id != 0
+
+    @property
+    def noncomputed_playtime(self) -> int:
+        if self.passed:
+            return self.bmap.hit_length
+        
+        return self.play_time // 1000
+    
+    @property
+    def computed_playtime(self) -> int:
+        if self.passed:
+            return self.bmap.hit_length
+        
+        value = self.play_time
+        if self.mods & Mods.DOUBLETIME:
+            value = value // 1.5
+        elif self.mods & Mods.HALFTIME:
+            value = value // 0.75
+        
+        if self.bmap.hit_length and value > self.bmap.hit_length * 1.33:
+            value = 0
+        
+        return value
     
     @classmethod
     async def from_score_sub(self, post_args: dict) -> Optional['Score']:
@@ -142,7 +165,7 @@ class Score:
             None,
             0.0,
             0.0,
-            0, # TODO: Playtime
+            int(post_args.get("ft")), # Playtime
             0,
             score_data[12],
             0.0,
@@ -239,7 +262,7 @@ class Score:
             f"SELECT COUNT(*) FROM {table} s INNER JOIN users u ON s.userid = "
             f"u.id WHERE u.privileges & {Privileges.USER_PUBLIC.value} AND "
             f"s.play_mode = {self.mode.value} AND s.completed = {Completed.BEST.value} "
-            f"AND {scoring} > %s AND s.beatmap_md5 = %s",
+            f"AND {scoring} >= %s AND s.beatmap_md5 = %s",
             (val, self.bmap.md5)
         )) + 1
 
@@ -317,12 +340,12 @@ class Score:
         # And now we insert the new one.
         await sql.execute(
             "INSERT INTO first_places (score_id, user_id, score, max_combo, full_combo,"
-            "mods, 300_count, 100_count, 50_count, miss_count, timestamp, mode, completed,"
-            "accuracy, pp, play_time, beatmap_md5, relax) VALUES "
-            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "mods, 300_count, 100_count, 50_count, ckatus_count, cgekis_count, miss_count,"
+            "timestamp, mode, completed, accuracy, pp, play_time, beatmap_md5, relax) VALUES "
+            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (self.id, self.user_id, self.score, self.max_combo, self.full_combo,
-            self.mods.value, self.count_300, self.count_100, self.count_50, self.count_miss,
-            self.timestamp, self.mode.value, self.completed.value, self.accuracy, self.pp,
+            self.mods.value, self.count_300, self.count_100, self.count_50, self.count_katu, self.count_geki,
+            self.count_miss, self.timestamp, self.mode.value, self.completed.value, self.accuracy, self.pp,
             self.play_time, self.bmap.md5, self.c_mode.value)
         )
         debug("First place added.")
@@ -399,12 +422,12 @@ class Score:
         self.id = await sql.execute(
             f"INSERT INTO {table} (beatmap_md5, userid, score, max_combo, full_combo, mods, "
             "300_count, 100_count, 50_count, katus_count, gekis_count, misses_count, time, "
-            "play_mode, completed, accuracy, pp) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+            "play_mode, completed, accuracy, pp, playtime) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
             "%s,%s,%s,%s,%s)",
             (self.bmap.md5, self.user_id, self.score, self.max_combo, int(self.full_combo),
             self.mods.value, self.count_300, self.count_100, self.count_50, self.count_katu,
             self.count_geki, self.count_miss, ts, self.mode.value, self.completed.value,
-            self.accuracy, self.pp)
+            self.accuracy, self.pp, self.computed_playtime)
         )
     
     async def save_pp(self) -> None:
